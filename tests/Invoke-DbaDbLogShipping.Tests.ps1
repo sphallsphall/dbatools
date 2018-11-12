@@ -32,8 +32,8 @@ Describe "$commandname Integration Tests" -Tags "IntegrationTests" {
         Remove-DbaDatabase -SqlInstance $script:instance2, $script:instance3 -Database $dbname -Confirm:$false
     }
     
-    It "returns success" {
-        $results = Invoke-DbaDbLogShipping -SourceSqlInstance $script:instance2 -DestinationSqlInstance $script:instance3 -Database $dbname -BackupNetworkPath C:\temp -BackupLocalPath "C:\temp\logshipping\backup" -GenerateFullBackup -CompressBackup -SecondaryDatabaseSuffix "_LS" -Force
+    It -Skip "returns success" {
+        $results = Invoke-DbaDbLogShipping -Source $script:instance2 -Destination $script:instance3 -Database $dbname -BackupNetworkPath C:\temp -BackupLocalPath "C:\temp\logshipping\backup" -GenerateFullBackup -CompressBackup -SecondaryDatabaseSuffix "_LS" -Force
         $results.Status -eq 'Success' | Should Be $true
     }
 }
