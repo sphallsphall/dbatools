@@ -25,11 +25,11 @@ function Invoke-DbaDbLogShipping {
         The backup destination must have at least read permissions for the secondary instance agent account.
         The copy destination must have at least read/write permission for the secondary instance agent acount.
 
-    .PARAMETER SourceSqlInstance
+    .PARAMETER Source
         Source SQL Server instance which contains the databases to be log shipped.
         You must have sysadmin access and server version must be SQL Server version 2000 or greater.
 
-    .PARAMETER DestinationSqlInstance
+    .PARAMETER Destination
         Destination SQL Server instance which contains the databases to be log shipped.
         You must have sysadmin access and server version must be SQL Server version 2000 or greater.
 
@@ -210,12 +210,12 @@ function Invoke-DbaDbLogShipping {
         Enables the Threshold alert for the primary database
 
     .PARAMETER RestoreDataFolder
-        Folder to be used to restore the database data files. Only used when parameter GenerateFullBackup or UseExistingFullBackup are set.
+        Folder to be used to restore the database data files. Only used when parameter GenerateFullBackup or UseLastBackup are set.
         If the parameter is not set the default data folder of the secondary instance will be used including the name of the database.
         If the folder is set but doesn't exist the default data folder of the secondary instance will be used including the name of the database.
 
     .PARAMETER RestoreLogFolder
-        Folder to be used to restore the database log files. Only used when parameter GenerateFullBackup or UseExistingFullBackup are set.
+        Folder to be used to restore the database log files. Only used when parameter GenerateFullBackup or UseLastBackup are set.
         If the parameter is not set the default transaction log folder of the secondary instance will be used.
         If the folder is set but doesn't exist the default transaction log folder of the secondary instance will be used.
 
@@ -312,9 +312,8 @@ function Invoke-DbaDbLogShipping {
     .PARAMETER StandbyDirectory
         Directory to place the standby file(s) in
 
-    .PARAMETER UseExistingFullBackup
-        If the database is not initialized on the secondary instance it can be done by selecting an existing full backup
-        and restore it for you.
+    .PARAMETER UseLastBackup
+        If the database is not initialized on the secondary instance it can be done by selecting an existing backup chain and restore it for you.
 
     .PARAMETER UseBackupFolder
         This enables the user to specify a specific backup folder containing one or more backup files to initialize the database on the secondary instance.
@@ -345,8 +344,8 @@ function Invoke-DbaDbLogShipping {
 
     .EXAMPLE
         PS C:\> $params = @{
-        >> SourceSqlInstance = 'sql1'
-        >> DestinationSqlInstance = 'sql2'
+        >> Source = 'sql1'
+        >> Destination = 'sql2'
         >> Database = 'db1'
         >> BackupNetworkPath= '\\sql1\logshipping'
         >> BackupLocalPath= 'D:\Data\logshipping'
@@ -371,8 +370,8 @@ function Invoke-DbaDbLogShipping {
 
     .EXAMPLE
         PS C:\> $params = @{
-        >> SourceSqlInstance = 'sql1'
-        >> DestinationSqlInstance = 'sql2'
+        >> Source = 'sql1'
+        >> Destination = 'sql2'
         >> Database = 'db1'
         >> BackupNetworkPath= '\\sql1\logshipping'
         >> GenerateFullBackup = $true
@@ -389,283 +388,119 @@ function Invoke-DbaDbLogShipping {
 
     param(
         [parameter(Mandatory)]
-        [ValidateNotNullOrEmpty()]
-        [Alias("SourceServerInstance", "SourceSqlServerSqlServer", "Source")]
-        [object]$SourceSqlInstance,
-
+        [Alias("SourceServerInstance", "SourceSqlServerSqlServer", "SourceSqlInstance")]
+        [DbaInstanceParameter]$Source,
         [parameter(Mandatory)]
-        [ValidateNotNullOrEmpty()]
-        [Alias("DestinationServerInstance", "DestinationSqlServer", "Destination")]
-        [object[]]$DestinationSqlInstance,
-
-        [Parameter(Mandatory = $false)]
-        [System.Management.Automation.PSCredential]
-        $SourceSqlCredential,
-
-        [Parameter(Mandatory = $false)]
-        [System.Management.Automation.PSCredential]
-        $SourceCredential,
-
-        [Parameter(Mandatory = $false)]
-        [System.Management.Automation.PSCredential]
-        $DestinationSqlCredential,
-
-        [Parameter(Mandatory = $false)]
-        [System.Management.Automation.PSCredential]
-        $DestinationCredential,
-
+        [Alias("DestinationServerInstance", "DestinationSqlServer", "DestinationSqlInstance")]
+        [DbaInstanceParameter[]]$Destination,
+        [System.Management.Automation.PSCredential]$SourceSqlCredential,
+        [System.Management.Automation.PSCredential]$SourceCredential,
+        [System.Management.Automation.PSCredential]$DestinationSqlCredential,
+        [System.Management.Automation.PSCredential]$DestinationCredential,
         [Parameter(Mandatory, ValueFromPipeline)]
-        [object[]]$Database,
-
+        [string[]]$Database,
         [parameter(Mandatory)]
         [string]$BackupNetworkPath,
-
-        [parameter(Mandatory = $false)]
         [string]$BackupLocalPath,
-
-        [parameter(Mandatory = $false)]
         [string]$BackupJob,
-
-        [parameter(Mandatory = $false)]
         [int]$BackupRetention,
-
-        [parameter(Mandatory = $false)]
         [string]$BackupSchedule,
-
-        [parameter(Mandatory = $false)]
         [switch]$BackupScheduleDisabled,
-
-        [parameter(Mandatory = $false)]
         [ValidateSet("Daily", "Weekly", "AgentStart", "IdleComputer")]
-        [object]$BackupScheduleFrequencyType,
-
-        [parameter(Mandatory = $false)]
-        [object[]]$BackupScheduleFrequencyInterval,
-
-        [parameter(Mandatory = $false)]
+        [string]$BackupScheduleFrequencyType,
+        [string[]]$BackupScheduleFrequencyInterval,
         [ValidateSet('Time', 'Seconds', 'Minutes', 'Hours')]
-        [object]$BackupScheduleFrequencySubdayType,
-
-        [parameter(Mandatory = $false)]
+        [string]$BackupScheduleFrequencySubdayType,
         [int]$BackupScheduleFrequencySubdayInterval,
-
-        [Parameter(Mandatory = $false)]
         [ValidateSet('Unused', 'First', 'Second', 'Third', 'Fourth', 'Last')]
-        [object]$BackupScheduleFrequencyRelativeInterval,
-
-        [Parameter(Mandatory = $false)]
+        [string]$BackupScheduleFrequencyRelativeInterval,
         [int]$BackupScheduleFrequencyRecurrenceFactor,
-
-        [parameter(Mandatory = $false)]
         [string]$BackupScheduleStartDate,
-
-        [parameter(Mandatory = $false)]
         [string]$BackupScheduleEndDate,
-
-        [parameter(Mandatory = $false)]
         [string]$BackupScheduleStartTime,
-
-        [parameter(Mandatory = $false)]
         [string]$BackupScheduleEndTime,
-
-        [parameter(Mandatory = $false)]
         [int]$BackupThreshold,
-
-        [parameter(Mandatory = $false)]
         [switch]$CompressBackup,
-
-        [parameter(Mandatory = $false)]
         [string]$CopyDestinationFolder,
-
-        [parameter(Mandatory = $false)]
         [string]$CopyJob,
-
-        [parameter(Mandatory = $false)]
         [int]$CopyRetention,
-
-        [parameter(Mandatory = $false)]
         [string]$CopySchedule,
-
-        [parameter(Mandatory = $false)]
         [switch]$CopyScheduleDisabled,
-
-        [parameter(Mandatory = $false)]
         [ValidateSet("Daily", "Weekly", "AgentStart", "IdleComputer")]
-        [object]$CopyScheduleFrequencyType,
-
-        [parameter(Mandatory = $false)]
-        [object[]]$CopyScheduleFrequencyInterval,
-
-        [parameter(Mandatory = $false)]
+        [string]$CopyScheduleFrequencyType,
+        [string[]]$CopyScheduleFrequencyInterval,
         [ValidateSet('Time', 'Seconds', 'Minutes', 'Hours')]
-        [object]$CopyScheduleFrequencySubdayType,
-
-        [parameter(Mandatory = $false)]
+        [string]$CopyScheduleFrequencySubdayType,
         [int]$CopyScheduleFrequencySubdayInterval,
-
-        [Parameter(Mandatory = $false)]
         [ValidateSet('Unused', 'First', 'Second', 'Third', 'Fourth', 'Last')]
-        [object]$CopyScheduleFrequencyRelativeInterval,
-
-        [Parameter(Mandatory = $false)]
+        [string]$CopyScheduleFrequencyRelativeInterval,
         [int]$CopyScheduleFrequencyRecurrenceFactor,
-
-        [parameter(Mandatory = $false)]
         [string]$CopyScheduleStartDate,
-
-        [parameter(Mandatory = $false)]
         [string]$CopyScheduleEndDate,
-
-        [parameter(Mandatory = $false)]
         [string]$CopyScheduleStartTime,
-
-        [parameter(Mandatory = $false)]
         [string]$CopyScheduleEndTime,
-
-        [parameter(Mandatory = $false)]
         [switch]$DisconnectUsers,
-
-        [parameter(Mandatory = $false)]
         [string]$FullBackupPath,
-
-        [parameter(Mandatory = $false)]
         [switch]$GenerateFullBackup,
-
-        [parameter(Mandatory = $false)]
         [int]$HistoryRetention,
-
-        [parameter(Mandatory = $false)]
         [switch]$NoRecovery,
-
-        [parameter(Mandatory = $false)]
         [switch]$NoInitialization,
-
-        [Parameter(Mandatory = $false)]
         [string]$PrimaryMonitorServer,
-
-        [Parameter(Mandatory = $false)]
-        [System.Management.Automation.PSCredential]
-        $PrimaryMonitorCredential,
-
-        [Parameter(Mandatory = $false)]
+        [System.Management.Automation.PSCredential]$PrimaryMonitorCredential,
         [ValidateSet(0, "sqlserver", 1, "windows")]
-        [object]$PrimaryMonitorServerSecurityMode,
-
-        [Parameter(Mandatory = $false)]
+        [string]$PrimaryMonitorServerSecurityMode,
         [switch]$PrimaryThresholdAlertEnabled,
-
-        [parameter(Mandatory = $false)]
         [string]$RestoreDataFolder,
-
-        [parameter(Mandatory = $false)]
         [string]$RestoreLogFolder,
-
-        [parameter(Mandatory = $false)]
         [int]$RestoreDelay,
-
-        [parameter(Mandatory = $false)]
         [int]$RestoreAlertThreshold,
-
-        [parameter(Mandatory = $false)]
         [string]$RestoreJob,
-
-        [parameter(Mandatory = $false)]
         [int]$RestoreRetention,
-
-        [parameter(Mandatory = $false)]
         [string]$RestoreSchedule,
-
-        [parameter(Mandatory = $false)]
         [switch]$RestoreScheduleDisabled,
-
-        [parameter(Mandatory = $false)]
         [ValidateSet("Daily", "Weekly", "AgentStart", "IdleComputer")]
-        [object]$RestoreScheduleFrequencyType,
-
-        [parameter(Mandatory = $false)]
-        [object[]]$RestoreScheduleFrequencyInterval,
-
-        [parameter(Mandatory = $false)]
+        [string]$RestoreScheduleFrequencyType,
+        [string[]]$RestoreScheduleFrequencyInterval,
         [ValidateSet('Time', 'Seconds', 'Minutes', 'Hours')]
-        [object]$RestoreScheduleFrequencySubdayType,
-
-        [parameter(Mandatory = $false)]
+        [string]$RestoreScheduleFrequencySubdayType,
         [int]$RestoreScheduleFrequencySubdayInterval,
-
-        [Parameter(Mandatory = $false)]
         [ValidateSet('Unused', 'First', 'Second', 'Third', 'Fourth', 'Last')]
-        [object]$RestoreScheduleFrequencyRelativeInterval,
-
-        [Parameter(Mandatory = $false)]
+        [string]$RestoreScheduleFrequencyRelativeInterval,
         [int]$RestoreScheduleFrequencyRecurrenceFactor,
-
-        [parameter(Mandatory = $false)]
         [string]$RestoreScheduleStartDate,
-
-        [parameter(Mandatory = $false)]
         [string]$RestoreScheduleEndDate,
-
-        [parameter(Mandatory = $false)]
         [string]$RestoreScheduleStartTime,
-
-        [parameter(Mandatory = $false)]
         [string]$RestoreScheduleEndTime,
-
-        [parameter(Mandatory = $false)]
         [int]$RestoreThreshold,
-
-        [parameter(Mandatory = $false)]
         [string]$SecondaryDatabasePrefix,
-
-        [parameter(Mandatory = $false)]
         [string]$SecondaryDatabaseSuffix,
-
-        [Parameter(Mandatory = $false)]
         [string]$SecondaryMonitorServer,
-
-        [Parameter(Mandatory = $false)]
-        [System.Management.Automation.PSCredential]
-        $SecondaryMonitorCredential,
-
-        [Parameter(Mandatory = $false)]
+        [System.Management.Automation.PSCredential]$SecondaryMonitorCredential,
         [ValidateSet(0, "sqlserver", 1, "windows")]
         [object]$SecondaryMonitorServerSecurityMode,
-
-        [Parameter(Mandatory = $false)]
         [switch]$SecondaryThresholdAlertEnabled,
-
-        [parameter(Mandatory = $false)]
         [switch]$Standby,
-
-        [parameter(Mandatory = $false)]
         [string]$StandbyDirectory,
-
-        [parameter(Mandatory = $false)]
-        [switch]$UseExistingFullBackup,
-
-        [parameter(Mandatory = $false)]
+        [switch]$UseLastBackup,
         [string]$UseBackupFolder,
-
         [switch]$Force,
-
-        [Alias('Silent')]
         [switch]$EnableException
     )
 
     begin {
-        Write-Message -Message "Started log shipping for $SourceSqlInstance to $DestinationSqlInstance" -Level Verbose
+        Write-Message -Message "Started log shipping for $Source to $Destination" -Level Verbose
 
         # Try connecting to the instance
         try {
-            $SourceServer = Connect-SqlInstance -SqlInstance $SourceSqlInstance -SqlCredential $SourceSqlCredential
+            $SourceServer = Connect-SqlInstance -SqlInstance $Source -SqlCredential $SourceSqlCredential
         } catch {
-            Stop-Function -Message "Could not connect to Sql Server instance $SourceSqlInstance" -ErrorRecord $_ -Target $SourceSqlInstance
+            Stop-Function -Message "Could not connect to Sql Server instance $Source" -ErrorRecord $_ -Target $Source
             return
         }
 
 
         # Check the instance if it is a named instance
-        $SourceServerName, $SourceInstanceName = $SourceSqlInstance.Split("\")
+        $SourceServerName, $SourceInstanceName = $Source.ToString().Split("\")
 
         if ($null -eq $SourceInstanceName) {
             $SourceInstanceName = "MSSQLSERVER"
@@ -685,11 +520,11 @@ function Invoke-DbaDbLogShipping {
 
         # Check the backup network path
         Write-Message -Message "Testing backup network path $BackupNetworkPath" -Level Verbose
-        if ((Test-DbaPath -Path $BackupNetworkPath -SqlInstance $SourceSqlInstance -SqlCredential $SourceCredential) -ne $true) {
-            Stop-Function -Message "Backup network path $BackupNetworkPath is not valid or can't be reached." -Target $SourceSqlInstance
+        if ((Test-DbaPath -Path $BackupNetworkPath -SqlInstance $Source -SqlCredential $SourceCredential) -ne $true) {
+            Stop-Function -Message "Backup network path $BackupNetworkPath is not valid or can't be reached." -Target $Source
             return
         } elseif ($BackupNetworkPath -notmatch $RegexUnc) {
-            Stop-Function -Message "Backup network path $BackupNetworkPath has to be in the form of \\server\share." -Target $SourceSqlInstance
+            Stop-Function -Message "Backup network path $BackupNetworkPath has to be in the form of \\server\share." -Target $Source
             return
         }
 
@@ -699,7 +534,7 @@ function Invoke-DbaDbLogShipping {
                 Write-Message -Message "Setting backup compression to 1." -Level Verbose
                 [bool]$BackupCompression = 1
             } else {
-                $backupServerSetting = (Get-DbaSpConfigure -SqlInstance $SourceSqlInstance -ConfigName DefaultBackupCompression).ConfiguredValue
+                $backupServerSetting = (Get-DbaSpConfigure -SqlInstance $Source -ConfigName DefaultBackupCompression).ConfiguredValue
                 Write-Message -Message "Setting backup compression to default server setting $backupServerSetting." -Level Verbose
                 [bool]$BackupCompression = $backupServerSetting
             }
@@ -711,15 +546,12 @@ function Invoke-DbaDbLogShipping {
         if ($Database) {
             foreach ($db in $Database) {
                 if ($db -notin $SourceServer.Databases.Name) {
-                    Stop-Function -Message "Database $db cannot be found on instance $SourceSqlInstance" -Target $SourceSqlInstance
+                    Stop-Function -Message "Database $db cannot be found on instance $Source" -Target $Source
                 }
-
-                $DatabaseCollection = $SourceServer.Databases | Where-Object { $_.Name -in $Database }
+                $InputObject += $SourceServer.Databases | Where-Object Name -in $Database
             }
-        } else {
-            Stop-Function -Message "Please supply a database to set up log shipping for" -Target $SourceSqlInstance -Continue
         }
-
+        
         # Set the database mode
         if ($Standby) {
             $DatabaseStatus = 1
@@ -844,40 +676,40 @@ function Invoke-DbaDbLogShipping {
         }
 
         # Checking for contradicting variables
-        if ($NoInitialization -and ($GenerateFullBackup -or $UseExistingFullBackup)) {
-            Stop-Function -Message "Cannot use -NoInitialization with -GenerateFullBackup or -UseExistingFullBackup" -Target $DestinationSqlInstance
+        if ($NoInitialization -and ($GenerateFullBackup -or $UseLastBackup)) {
+            Stop-Function -Message "Cannot use -NoInitialization with -GenerateFullBackup or -UseLastBackup" -Target $Destination
             return
         }
 
-        if ($UseBackupFolder -and ($GenerateFullBackup -or $NoInitialization -or $UseExistingFullBackup)) {
-            Stop-Function -Message "Cannot use -UseBackupFolder with -GenerateFullBackup, -NoInitialization or -UseExistingFullBackup" -Target $DestinationSqlInstance
+        if ($UseBackupFolder -and ($GenerateFullBackup -or $NoInitialization -or $UseLastBackup)) {
+            Stop-Function -Message "Cannot use -UseBackupFolder with -GenerateFullBackup, -NoInitialization or -UseLastBackup" -Target $Destination
             return
         }
 
         # Check the subday interval
         if (($BackupScheduleFrequencySubdayType -in 2, "Seconds", 4, "Minutes") -and (-not ($BackupScheduleFrequencySubdayInterval -ge 1 -or $BackupScheduleFrequencySubdayInterval -le 59))) {
-            Stop-Function -Message "Backup subday interval $BackupScheduleFrequencySubdayInterval must be between 1 and 59 when subday type is 2, 'Seconds', 4 or 'Minutes'" -Target $SourceSqlInstance
+            Stop-Function -Message "Backup subday interval $BackupScheduleFrequencySubdayInterval must be between 1 and 59 when subday type is 2, 'Seconds', 4 or 'Minutes'" -Target $Source
             return
         } elseif (($BackupScheduleFrequencySubdayType -in 8, "Hours") -and (-not ($BackupScheduleFrequencySubdayInterval -ge 1 -and $BackupScheduleFrequencySubdayInterval -le 23))) {
-            Stop-Function -Message "Backup Subday interval $BackupScheduleFrequencySubdayInterval must be between 1 and 23 when subday type is 8 or 'Hours" -Target $SourceSqlInstance
+            Stop-Function -Message "Backup Subday interval $BackupScheduleFrequencySubdayInterval must be between 1 and 23 when subday type is 8 or 'Hours" -Target $Source
             return
         }
 
         # Check the subday interval
         if (($CopyScheduleFrequencySubdayType -in 2, "Seconds", 4, "Minutes") -and (-not ($CopyScheduleFrequencySubdayInterval -ge 1 -or $CopyScheduleFrequencySubdayInterval -le 59))) {
-            Stop-Function -Message "Copy subday interval $CopyScheduleFrequencySubdayInterval must be between 1 and 59 when subday type is 2, 'Seconds', 4 or 'Minutes'" -Target $DestinationSqlInstance
+            Stop-Function -Message "Copy subday interval $CopyScheduleFrequencySubdayInterval must be between 1 and 59 when subday type is 2, 'Seconds', 4 or 'Minutes'" -Target $Destination
             return
         } elseif (($CopyScheduleFrequencySubdayType -in 8, "Hours") -and (-not ($CopyScheduleFrequencySubdayInterval -ge 1 -and $CopyScheduleFrequencySubdayInterval -le 23))) {
-            Stop-Function -Message "Copy subday interval $CopyScheduleFrequencySubdayInterval must be between 1 and 23 when subday type is 8 or 'Hours'" -Target $DestinationSqlInstance
+            Stop-Function -Message "Copy subday interval $CopyScheduleFrequencySubdayInterval must be between 1 and 23 when subday type is 8 or 'Hours'" -Target $Destination
             return
         }
 
         # Check the subday interval
         if (($RestoreScheduleFrequencySubdayType -in 2, "Seconds", 4, "Minutes") -and (-not ($RestoreScheduleFrequencySubdayInterval -ge 1 -or $RestoreScheduleFrequencySubdayInterval -le 59))) {
-            Stop-Function -Message "Restore subday interval $RestoreScheduleFrequencySubdayInterval must be between 1 and 59 when subday type is 2, 'Seconds', 4 or 'Minutes'" -Target $DestinationSqlInstance
+            Stop-Function -Message "Restore subday interval $RestoreScheduleFrequencySubdayInterval must be between 1 and 59 when subday type is 2, 'Seconds', 4 or 'Minutes'" -Target $Destination
             return
         } elseif (($RestoreScheduleFrequencySubdayType -in 8, "Hours") -and (-not ($RestoreScheduleFrequencySubdayInterval -ge 1 -and $RestoreScheduleFrequencySubdayInterval -le 23))) {
-            Stop-Function -Message "Restore subday interval $RestoreScheduleFrequencySubdayInterval must be between 1 and 23 when subday type is 8 or 'Hours" -Target $DestinationSqlInstance
+            Stop-Function -Message "Restore subday interval $RestoreScheduleFrequencySubdayInterval must be between 1 and 23 when subday type is 8 or 'Hours" -Target $Destination
             return
         }
 
@@ -887,7 +719,7 @@ function Invoke-DbaDbLogShipping {
             Write-Message -Message "Backup start date set to $BackupScheduleStartDate" -Level Verbose
         } else {
             if ($BackupScheduleStartDate -notmatch $RegexDate) {
-                Stop-Function -Message "Backup start date $BackupScheduleStartDate needs to be a valid date with format yyyyMMdd" -Target $SourceSqlInstance
+                Stop-Function -Message "Backup start date $BackupScheduleStartDate needs to be a valid date with format yyyyMMdd" -Target $Source
                 return
             }
         }
@@ -897,7 +729,7 @@ function Invoke-DbaDbLogShipping {
             $BackupScheduleStartTime = '000000'
             Write-Message -Message "Backup start time set to $BackupScheduleStartTime" -Level Verbose
         } elseif ($BackupScheduleStartTime -notmatch $RegexTime) {
-            Stop-Function -Message  "Backup start time $BackupScheduleStartTime needs to match between '000000' and '235959'" -Target $SourceSqlInstance
+            Stop-Function -Message  "Backup start time $BackupScheduleStartTime needs to match between '000000' and '235959'" -Target $Source
             return
         }
 
@@ -906,7 +738,7 @@ function Invoke-DbaDbLogShipping {
             $BackupScheduleEndTime = '235959'
             Write-Message -Message "Backup end time set to $BackupScheduleEndTime" -Level Verbose
         } elseif ($BackupScheduleStartTime -notmatch $RegexTime) {
-            Stop-Function -Message  "Backup end time $BackupScheduleStartTime needs to match between '000000' and '235959'" -Target $SourceSqlInstance
+            Stop-Function -Message  "Backup end time $BackupScheduleStartTime needs to match between '000000' and '235959'" -Target $Source
             return
         }
 
@@ -914,7 +746,7 @@ function Invoke-DbaDbLogShipping {
         if (-not $BackupScheduleEndDate) {
             $BackupScheduleEndDate = '99991231'
         } elseif ($BackupScheduleEndDate -notmatch $RegexDate) {
-            Stop-Function -Message "Backup end date $BackupScheduleEndDate needs to be a valid date with format yyyyMMdd" -Target $SourceSqlInstance
+            Stop-Function -Message "Backup end date $BackupScheduleEndDate needs to be a valid date with format yyyyMMdd" -Target $Source
             return
         }
 
@@ -924,7 +756,7 @@ function Invoke-DbaDbLogShipping {
             Write-Message -Message "Copy start date set to $CopyScheduleStartDate" -Level Verbose
         } else {
             if ($CopyScheduleStartDate -notmatch $RegexDate) {
-                Stop-Function -Message "Copy start date $CopyScheduleStartDate needs to be a valid date with format yyyyMMdd" -Target $SourceSqlInstance
+                Stop-Function -Message "Copy start date $CopyScheduleStartDate needs to be a valid date with format yyyyMMdd" -Target $Source
                 return
             }
         }
@@ -933,7 +765,7 @@ function Invoke-DbaDbLogShipping {
         if (-not $CopyScheduleEndDate) {
             $CopyScheduleEndDate = '99991231'
         } elseif ($CopyScheduleEndDate -notmatch $RegexDate) {
-            Stop-Function -Message "Copy end date $CopyScheduleEndDate needs to be a valid date with format yyyyMMdd" -Target $SourceSqlInstance
+            Stop-Function -Message "Copy end date $CopyScheduleEndDate needs to be a valid date with format yyyyMMdd" -Target $Source
             return
         }
 
@@ -942,7 +774,7 @@ function Invoke-DbaDbLogShipping {
             $CopyScheduleStartTime = '000000'
             Write-Message -Message "Copy start time set to $CopyScheduleStartTime" -Level Verbose
         } elseif ($CopyScheduleStartTime -notmatch $RegexTime) {
-            Stop-Function -Message  "Copy start time $CopyScheduleStartTime needs to match between '000000' and '235959'" -Target $SourceSqlInstance
+            Stop-Function -Message  "Copy start time $CopyScheduleStartTime needs to match between '000000' and '235959'" -Target $Source
             return
         }
 
@@ -951,7 +783,7 @@ function Invoke-DbaDbLogShipping {
             $CopyScheduleEndTime = '235959'
             Write-Message -Message "Copy end time set to $CopyScheduleEndTime" -Level Verbose
         } elseif ($CopyScheduleEndTime -notmatch $RegexTime) {
-            Stop-Function -Message  "Copy end time $CopyScheduleEndTime needs to match between '000000' and '235959'" -Target $SourceSqlInstance
+            Stop-Function -Message  "Copy end time $CopyScheduleEndTime needs to match between '000000' and '235959'" -Target $Source
             return
         }
 
@@ -961,7 +793,7 @@ function Invoke-DbaDbLogShipping {
             Write-Message -Message "Restore start date set to $RestoreScheduleStartDate" -Level Verbose
         } else {
             if ($RestoreScheduleStartDate -notmatch $RegexDate) {
-                Stop-Function -Message "Restore start date $RestoreScheduleStartDate needs to be a valid date with format yyyyMMdd" -Target $SourceSqlInstance
+                Stop-Function -Message "Restore start date $RestoreScheduleStartDate needs to be a valid date with format yyyyMMdd" -Target $Source
                 return
             }
         }
@@ -970,7 +802,7 @@ function Invoke-DbaDbLogShipping {
         if (-not $RestoreScheduleEndDate) {
             $RestoreScheduleEndDate = '99991231'
         } elseif ($RestoreScheduleEndDate -notmatch $RegexDate) {
-            Stop-Function -Message "Restore end date $RestoreScheduleEndDate needs to be a valid date with format yyyyMMdd" -Target $SourceSqlInstance
+            Stop-Function -Message "Restore end date $RestoreScheduleEndDate needs to be a valid date with format yyyyMMdd" -Target $Source
             return
         }
 
@@ -979,7 +811,7 @@ function Invoke-DbaDbLogShipping {
             $RestoreScheduleStartTime = '000000'
             Write-Message -Message "Restore start time set to $RestoreScheduleStartTime" -Level Verbose
         } elseif ($RestoreScheduleStartTime -notmatch $RegexTime) {
-            Stop-Function -Message  "Restore start time $RestoreScheduleStartTime needs to match between '000000' and '235959'" -Target $SourceSqlInstance
+            Stop-Function -Message  "Restore start time $RestoreScheduleStartTime needs to match between '000000' and '235959'" -Target $Source
             return
         }
 
@@ -988,7 +820,7 @@ function Invoke-DbaDbLogShipping {
             $RestoreScheduleEndTime = '235959'
             Write-Message -Message "Restore end time set to $RestoreScheduleEndTime" -Level Verbose
         } elseif ($RestoreScheduleEndTime -notmatch $RegexTime) {
-            Stop-Function -Message  "Restore end time $RestoreScheduleEndTime needs to match between '000000' and '235959'" -Target $SourceSqlInstance
+            Stop-Function -Message  "Restore end time $RestoreScheduleEndTime needs to match between '000000' and '235959'" -Target $Source
             return
         }
     }
@@ -997,7 +829,7 @@ function Invoke-DbaDbLogShipping {
 
         if (Test-FunctionInterrupt) { return }
 
-        foreach ($destInstance in $DestinationSqlInstance) {
+        foreach ($destInstance in $Destination) {
 
             $setupResult = "Success"
             $comment = ""
@@ -1010,7 +842,7 @@ function Invoke-DbaDbLogShipping {
                 return
             }
 
-            $DestinationServerName, $DestinationInstanceName = $destInstance.Split("\")
+            $DestinationServerName, $DestinationInstanceName = $destInstance.ToString().Split("\")
 
             if ($null -eq $DestinationInstanceName) {
                 $DestinationInstanceName = "MSSQLSERVER"
@@ -1024,10 +856,10 @@ function Invoke-DbaDbLogShipping {
             }
 
             # Check the instance names and the database settings
-            if (($SourceSqlInstance -eq $destInstance) -and (-not $SecondaryDatabasePrefix -or $SecondaryDatabaseSuffix)) {
+            if (($Source -eq $destInstance) -and (-not $SecondaryDatabasePrefix -or $SecondaryDatabaseSuffix)) {
                 $setupResult = "Failed"
                 $comment = "The destination database is the same as the source"
-                Stop-Function -Message "The destination database is the same as the source`nPlease enter a prefix or suffix using -SecondaryDatabasePrefix or -SecondaryDatabaseSuffix." -Target $SourceSqlInstance
+                Stop-Function -Message "The destination database is the same as the source`nPlease enter a prefix or suffix using -SecondaryDatabasePrefix or -SecondaryDatabaseSuffix." -Target $Source
                 return
             }
 
@@ -1131,7 +963,7 @@ function Invoke-DbaDbLogShipping {
                 } else {
                     $setupResult = "Failed"
                     $comment = "Destination database is the same as source database"
-                    Stop-Function -Message "Destination database is the same as source database.`nPlease check the secondary server, database prefix or suffix or use -Force to set the secondary database using a suffix." -Target $SourceSqlInstance
+                    Stop-Function -Message "Destination database is the same as source database.`nPlease check the secondary server, database prefix or suffix or use -Force to set the secondary database using a suffix." -Target $Source
                     return
                 }
             }
@@ -1153,20 +985,20 @@ function Invoke-DbaDbLogShipping {
                 } else {
                     $setupResult = "Failed"
                     $comment = "Please set the parameter -StandbyDirectory when using -Standby"
-                    Stop-Function -Message "Please set the parameter -StandbyDirectory when using -Standby" -Target $SourceSqlInstance
+                    Stop-Function -Message "Please set the parameter -StandbyDirectory when using -Standby" -Target $Source
                     return
                 }
             }
 
             # Loop through each of the databases
-            foreach ($db in $DatabaseCollection) {
+            foreach ($db in $InputObject) {
 
                 # Check the status of the database
                 if ($db.RecoveryModel -ne 'Full') {
                     $setupResult = "Failed"
                     $comment = "Database $db is not in FULL recovery mode"
 
-                    Stop-Function -Message  "Database $db is not in FULL recovery mode" -Target $SourceSqlInstance -Continue
+                    Stop-Function -Message  "Database $db is not in FULL recovery mode" -Target $Source -Continue
                 }
 
                 # Set the intital destination database
@@ -1187,7 +1019,7 @@ function Invoke-DbaDbLogShipping {
                     $setupResult = "Failed"
                     $comment = "Database $SecondaryDatabase needs to be initialized before log shipping setting can continue"
 
-                    Stop-Function -Message "Database $SecondaryDatabase needs to be initialized before log shipping setting can continue." -Target $SourceSqlInstance -Continue
+                    Stop-Function -Message "Database $SecondaryDatabase needs to be initialized before log shipping setting can continue." -Target $Source -Continue
                 }
 
                 # Check the local backup path
@@ -1220,7 +1052,7 @@ function Invoke-DbaDbLogShipping {
                 # Checking if the database network path exists
                 if ($setupResult -ne 'Failed') {
                     Write-Message -Message "Testing database backup network path $DatabaseBackupNetworkPath" -Level Verbose
-                    if ((Test-DbaPath -Path $DatabaseBackupNetworkPath -SqlInstance $SourceSqlInstance -SqlCredential $SourceCredential) -ne $true) {
+                    if ((Test-DbaPath -Path $DatabaseBackupNetworkPath -SqlInstance $Source -SqlCredential $SourceCredential) -ne $true) {
                         # To to create the backup directory for the database
                         try {
                             Write-Message -Message "Database backup network path $DatabaseBackupNetworkPath not found. Trying to create it.." -Level Verbose
@@ -1233,7 +1065,7 @@ function Invoke-DbaDbLogShipping {
                             $setupResult = "Failed"
                             $comment = "Something went wrong creating the backup directory"
 
-                            Stop-Function -Message "Something went wrong creating the backup directory" -ErrorRecord $_ -Target $SourceSqlInstance -Continue
+                            Stop-Function -Message "Something went wrong creating the backup directory" -ErrorRecord $_ -Target $Source -Continue
                         }
                     }
                 }
@@ -1268,11 +1100,11 @@ function Invoke-DbaDbLogShipping {
                         # Check if the secondary database exists on the secondary instance
                         if ($DestiationServer.Databases.Name -notcontains $SecondaryDatabase) {
                             # Check if force is being used and no option to generate the full backup is set
-                            if ($Force -and -not ($GenerateFullBackup -or $UseExistingFullBackup)) {
+                            if ($Force -and -not ($GenerateFullBackup -or $UseLastBackup)) {
                                 # Set the option to generate a full backup
                                 Write-Message -Message "Set option to initialize secondary database with full backup" -Level Verbose
                                 $GenerateFullBackup = $true
-                            } elseif (-not $Force -and -not $GenerateFullBackup -and -not $UseExistingFullBackup -and -not $UseBackupFolder) {
+                            } elseif (-not $Force -and -not $GenerateFullBackup -and -not $UseLastBackup -and -not $UseBackupFolder) {
                                 # Set up the confirm part
                                 $message = "The database $SecondaryDatabase does not exist on instance $destInstance. `nDo you want to initialize it by generating a full backup?"
                                 $choiceYes = New-Object System.Management.Automation.Host.ChoiceDescription "&Yes", "Answer Yes."
@@ -1303,7 +1135,7 @@ function Invoke-DbaDbLogShipping {
 
 
                 # Check the parameters for initialization of the secondary database
-                if (-not $NoInitialization -and ($GenerateFullBackup -or $UseExistingFullBackup -or $UseBackupFolder)) {
+                if (-not $NoInitialization -and ($GenerateFullBackup -or $UseLastBackup -or $UseBackupFolder)) {
                     # Check if the restore data and log folder are set
                     if ($setupResult -ne 'Failed') {
                         if (-not $RestoreDataFolder -or -not $RestoreLogFolder) {
@@ -1343,7 +1175,7 @@ function Invoke-DbaDbLogShipping {
                                     } catch {
                                         $setupResult = "Failed"
                                         $comment = "Something went wrong creating the restore data directory"
-                                        Stop-Function -Message "Something went wrong creating the restore data directory" -ErrorRecord $_ -Target $SourceSqlInstance -Continue
+                                        Stop-Function -Message "Something went wrong creating the restore data directory" -ErrorRecord $_ -Target $Source -Continue
                                     }
                                 }
                             }
@@ -1363,7 +1195,7 @@ function Invoke-DbaDbLogShipping {
                                     } catch {
                                         $setupResult = "Failed"
                                         $comment = "Something went wrong creating the restore log directory"
-                                        Stop-Function -Message "Something went wrong creating the restore log directory" -ErrorRecord $_ -Target $SourceSqlInstance -Continue
+                                        Stop-Function -Message "Something went wrong creating the restore log directory" -ErrorRecord $_ -Target $Source -Continue
                                     }
                                 }
                             }
@@ -1388,23 +1220,23 @@ function Invoke-DbaDbLogShipping {
                             }
 
                             $BackupPath = $UseBackupFolder
-                        } elseif ($UseExistingFullBackup) {
-                            Write-Message -Message "No path to the full backup is set. Trying to retrieve the last full backup for $db from $SourceSqlInstance" -Level Verbose
+                        } elseif ($UseLastBackup) {
+                            Write-Message -Message "No path to the full backup is set. Trying to retrieve the last full backup for $db from $Source" -Level Verbose
 
                             # Get the last full backup
-                            $LastBackup = Get-DbaBackupHistory -SqlInstance $SourceSqlInstance -Databases $($db.Name) -LastFull -Credential $SourceSqlCredential
+                            $LastBackup = Get-DbaBackupHistory -SqlInstance $Source -Databases $($db.Name) -Last -Credential $SourceSqlCredential
 
                             # Check if there was a last backup
                             if ($null -eq $LastBackup) {
                                 # Test the path to the backup
                                 Write-Message -Message "Testing last backup path $(($LastBackup[-1]).Path[-1])" -Level Verbose
-                                if ((Test-DbaPath -Path ($LastBackup[-1]).Path[-1] -SqlInstance $SourceSqlInstance -SqlCredential $SourceCredential) -ne $true) {
+                                if ((Test-DbaPath -Path ($LastBackup[-1]).Path[-1] -SqlInstance $Source -SqlCredential $SourceCredential) -ne $true) {
                                     $setupResult = "Failed"
                                     $comment = "The full backup could not be found"
                                     Stop-Function -Message "The full backup could not be found on $($LastBackup.Path). Check path and/or credentials" -ErrorRecord $_ -Target $destInstance -Continue
                                 }
                                 # Check if the source for the last full backup is remote and the backup is on a shared location
-                                elseif (($LastBackup.Computername -ne $SourceServerName) -and (($LastBackup[-1]).Path[-1].StartsWith('\\') -eq $false)) {
+                                elseif (($LastBackup.Computername -contains $SourceServerName) -and (($LastBackup[-1]).Path[-1].StartsWith('\\') -eq $false)) {
                                     $setupResult = "Failed"
                                     $comment = "The last full backup is not located on shared location"
                                     Stop-Function -Message "The last full backup is not located on shared location. `n$($_.Exception.Message)" -ErrorRecord $_ -Target $destInstance -Continue
@@ -1482,7 +1314,7 @@ function Invoke-DbaDbLogShipping {
                 # If the database needs to be backed up first
                 if ($setupResult -ne 'Failed') {
                     if ($GenerateFullBackup) {
-                        if ($PSCmdlet.ShouldProcess($SourceSqlInstance, "Backing up database $db")) {
+                        if ($PSCmdlet.ShouldProcess($Source, "Backing up database $db")) {
 
                             Write-Message -Message "Generating full backup." -Level Verbose
                             Write-Message -Message "Backing up database $db to $DatabaseBackupNetworkPath" -Level Verbose
@@ -1490,7 +1322,7 @@ function Invoke-DbaDbLogShipping {
                             try {
                                 $Timestamp = Get-Date -format "yyyyMMddHHmmss"
 
-                                $LastBackup = Backup-DbaDatabase -SqlInstance $SourceSqlInstance `
+                                $LastBackup = Backup-DbaDatabase -SqlInstance $Source `
                                     -SqlCredential $SourceSqlCredential `
                                     -BackupDirectory $DatabaseBackupNetworkPath `
                                     -BackupFileName "FullBackup_$($db.Name)_PreLogShipping_$Timestamp.bak" `
@@ -1522,8 +1354,8 @@ function Invoke-DbaDbLogShipping {
 
                 # Check the primary monitor server
                 if ($Force -and (-not$PrimaryMonitorServer -or [string]$PrimaryMonitorServer -eq '' -or $null -eq $PrimaryMonitorServer)) {
-                    Write-Message -Message "Setting monitor server for primary server to $SourceSqlInstance." -Level Verbose
-                    $PrimaryMonitorServer = $SourceSqlInstance
+                    Write-Message -Message "Setting monitor server for primary server to $Source." -Level Verbose
+                    $PrimaryMonitorServer = $Source
                 }
 
                 # Check the PrimaryMonitorServerSecurityMode if it's SQL Server authentication
@@ -1531,7 +1363,7 @@ function Invoke-DbaDbLogShipping {
                     if ($PrimaryMonitorServerLogin) {
                         $setupResult = "Failed"
                         $comment = "The PrimaryMonitorServerLogin cannot be empty"
-                        Stop-Function -Message "The PrimaryMonitorServerLogin cannot be empty when using SQL Server authentication." -Target $SourceSqlInstance -Continue
+                        Stop-Function -Message "The PrimaryMonitorServerLogin cannot be empty when using SQL Server authentication." -Target $Source -Continue
                     }
 
                     if ($PrimaryMonitorServerPassword) {
@@ -1550,8 +1382,8 @@ function Invoke-DbaDbLogShipping {
 
                 # Check the secondary monitor server
                 if ($Force -and (-not $SecondaryMonitorServer -or [string]$SecondaryMonitorServer -eq '' -or $null -eq $SecondaryMonitorServer)) {
-                    Write-Message -Message "Setting secondary monitor server for $destInstance to $SourceSqlInstance." -Level Verbose
-                    $SecondaryMonitorServer = $SourceSqlInstance
+                    Write-Message -Message "Setting secondary monitor server for $destInstance to $Source." -Level Verbose
+                    $SecondaryMonitorServer = $Source
                 }
 
                 # Check the MonitorServerSecurityMode if it's SQL Server authentication
@@ -1559,13 +1391,13 @@ function Invoke-DbaDbLogShipping {
                     if ($SecondaryMonitorServerLogin) {
                         $setupResult = "Failed"
                         $comment = "The SecondaryMonitorServerLogin cannot be empty"
-                        Stop-Function -Message "The SecondaryMonitorServerLogin cannot be empty when using SQL Server authentication." -Target $SourceSqlInstance -Continue
+                        Stop-Function -Message "The SecondaryMonitorServerLogin cannot be empty when using SQL Server authentication." -Target $Source -Continue
                     }
 
                     if ($SecondaryMonitorServerPassword) {
                         $setupResult = "Failed"
                         $comment = "The SecondaryMonitorServerPassword cannot be empty"
-                        Stop-Function -Message "The SecondaryMonitorServerPassword cannot be empty when using SQL Server authentication." -Target $SourceSqlInstance -Continue
+                        Stop-Function -Message "The SecondaryMonitorServerPassword cannot be empty when using SQL Server authentication." -Target $Source -Continue
                     }
                 }
 
@@ -1574,7 +1406,7 @@ function Invoke-DbaDbLogShipping {
                 # Restore the full backup
                 if ($setupResult -ne 'Failed') {
                     if ($PSCmdlet.ShouldProcess($destInstance, "Restoring database $db to $SecondaryDatabase on $destInstance")) {
-                        if ($GenerateFullBackup -or $UseExistingFullBackup -or $UseBackupFolder) {
+                        if ($GenerateFullBackup -or $UseLastBackup -or $UseBackupFolder) {
                             try {
                                 Write-Message -Message "Start database restore" -Level Verbose
                                 if ($NoRecovery -or (-not $Standby)) {
@@ -1636,7 +1468,7 @@ function Invoke-DbaDbLogShipping {
                             } catch {
                                 $setupResult = "Failed"
                                 $comment = "Something went wrong restoring the secondary database"
-                                Stop-Function -Message "Something went wrong restoring the secondary database" -ErrorRecord $_ -Target $SourceSqlInstance -Continue
+                                Stop-Function -Message "Something went wrong restoring the secondary database" -ErrorRecord $_ -Target $Source -Continue
                             }
 
                             Write-Message -Message "Restore completed." -Level Verbose
@@ -1647,12 +1479,12 @@ function Invoke-DbaDbLogShipping {
                 #region Set up log shipping on the primary instance
                 # Set up log shipping on the primary instance
                 if ($setupResult -ne 'Failed') {
-                    if ($PSCmdlet.ShouldProcess($SourceSqlInstance, "Configuring logshipping for primary database $db on $SourceSqlInstance")) {
+                    if ($PSCmdlet.ShouldProcess($Source, "Configuring logshipping for primary database $db on $Source")) {
                         try {
 
                             Write-Message -Message "Configuring logshipping for primary database" -Level Verbose
 
-                            New-DbaLogShippingPrimaryDatabase -SqlInstance $SourceSqlInstance `
+                            New-DbaLogShippingPrimaryDatabase -SqlInstance $Source `
                                 -SqlCredential $SourceSqlCredential `
                                 -Database $($db.Name) `
                                 -BackupDirectory $DatabaseBackupLocalPath `
@@ -1670,17 +1502,17 @@ function Invoke-DbaDbLogShipping {
 
                             # Check if the backup job needs to be enabled or disabled
                             if ($BackupScheduleDisabled) {
-                                $null = Set-DbaAgentJob -SqlInstance $SourceSqlInstance -SqlCredential $SourceSqlCredential -Job $DatabaseBackupJob -Disabled
+                                $null = Set-DbaAgentJob -SqlInstance $Source -SqlCredential $SourceSqlCredential -Job $DatabaseBackupJob -Disabled
                                 Write-Message -Message "Disabling backup job $DatabaseBackupJob" -Level Verbose
                             } else {
-                                $null = Set-DbaAgentJob -SqlInstance $SourceSqlInstance -SqlCredential $SourceSqlCredential -Job $DatabaseBackupJob -Enabled
+                                $null = Set-DbaAgentJob -SqlInstance $Source -SqlCredential $SourceSqlCredential -Job $DatabaseBackupJob -Enabled
                                 Write-Message -Message "Enabling backup job $DatabaseBackupJob" -Level Verbose
                             }
 
                             Write-Message -Message "Create backup job schedule $DatabaseBackupSchedule" -Level Verbose
 
                             #Variable $BackupJobSchedule marked as unused by PSScriptAnalyzer replaced with $null for catching output
-                            $null = New-DbaAgentSchedule -SqlInstance $SourceSqlInstance `
+                            $null = New-DbaAgentSchedule -SqlInstance $Source `
                                 -SqlCredential $SourceSqlCredential `
                                 -Job $DatabaseBackupJob `
                                 -Schedule $DatabaseBackupSchedule `
@@ -1698,7 +1530,7 @@ function Invoke-DbaDbLogShipping {
 
                             Write-Message -Message "Configuring logshipping from primary to secondary database." -Level Verbose
 
-                            New-DbaLogShippingPrimarySecondary -SqlInstance $SourceSqlInstance `
+                            New-DbaLogShippingPrimarySecondary -SqlInstance $Source `
                                 -SqlCredential $SourceSqlCredential `
                                 -PrimaryDatabase $($db.Name) `
                                 -SecondaryDatabase $SecondaryDatabase `
@@ -1707,7 +1539,7 @@ function Invoke-DbaDbLogShipping {
                         } catch {
                             $setupResult = "Failed"
                             $comment = "Something went wrong setting up log shipping for primary instance"
-                            Stop-Function -Message "Something went wrong setting up log shipping for primary instance" -ErrorRecord $_ -Target $SourceSqlInstance -Continue
+                            Stop-Function -Message "Something went wrong setting up log shipping for primary instance" -ErrorRecord $_ -Target $Source -Continue
                         }
                     }
                 }
@@ -1730,7 +1562,7 @@ function Invoke-DbaDbLogShipping {
                                 -MonitorServer $SecondaryMonitorServer `
                                 -MonitorServerSecurityMode $SecondaryMonitorServerSecurityMode `
                                 -MonitorCredential $SecondaryMonitorCredential `
-                                -PrimaryServer $SourceSqlInstance `
+                                -PrimaryServer $Source `
                                 -PrimaryDatabase $($db.Name) `
                                 -RestoreJob $DatabaseRestoreJob `
                                 -Force:$Force
@@ -1777,7 +1609,7 @@ function Invoke-DbaDbLogShipping {
                             New-DbaLogShippingSecondaryDatabase -SqlInstance $destInstance `
                                 -SqlCredential $DestinationSqlCredential `
                                 -SecondaryDatabase $SecondaryDatabase `
-                                -PrimaryServer $SourceSqlInstance `
+                                -PrimaryServer $Source `
                                 -PrimaryDatabase $($db.Name) `
                                 -RestoreDelay $RestoreDelay `
                                 -RestoreMode $DatabaseStatus `
