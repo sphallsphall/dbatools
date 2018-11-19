@@ -173,8 +173,11 @@ function Test-DbaLastBackup {
         if ($SqlInstance) {
             $InputObject += Get-DbaDatabase -SqlInstance $SqlInstance -SqlCredential $SqlCredential -Database $Database -ExcludeDatabase $ExcludeDatabase
         }
-
+        
         foreach ($db in $InputObject) {
+            
+            $startRestore = $endRestore = $restoreElapsed = $startDbcc = $endDbcc = $null
+            
             if ($db.Name -eq "tempdb") {
                 continue
             }
@@ -313,6 +316,7 @@ function Test-DbaLastBackup {
                     $copysuccess = $false
                 }
             }
+            
             if (-not $copysuccess) {
                 Write-Message -Level Verbose -Message "Failed to copy backups."
                 $lastbackup = @{
