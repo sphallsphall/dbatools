@@ -16,7 +16,3 @@ if (Test-Path C:\temp\constants.ps1) {
     $script:azureblob = "https://dbatools.blob.core.windows.net/sql"
     $script:azureblobaccount = "dbatools"
 }
-
-if ($env:appveyor) {
-    $PSDefaultParameterValues['*:WarningAction'] = 'SilentlyContinue'
-}
