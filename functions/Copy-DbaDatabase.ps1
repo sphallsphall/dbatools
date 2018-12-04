@@ -105,6 +105,9 @@ function Copy-DbaDatabase {
 
     .PARAMETER SetSourceOffline
         If this switch is enabled, the Source database will be set to Offline after being copied.
+    
+    .PARAMETER databaseInOwnSubdir
+        If this switch is enabled, the destination path will include a subfolder named after the database.
 
     .PARAMETER WhatIf
         If this switch is enabled, no actions are performed but informational messages will be displayed that explain what would happen if the command were to run.
@@ -212,6 +215,8 @@ function Copy-DbaDatabase {
         [switch]$UseLastBackup,
         [parameter(ParameterSetName = "DbBackup")]
         [switch]$Continue,
+        [parameter(ParameterSetName = "DbBackup")]
+        [switch]$databaseInOwnSubdir,
         [parameter(ValueFromPipeline)]
         [Microsoft.SqlServer.Management.Smo.Database[]]$InputObject,
         [switch]$NoCopyOnly,
@@ -1171,14 +1176,30 @@ function Copy-DbaDatabase {
                                     continue
                                 }
                             }
-                            Write-Message -Level Verbose -Message "Reuse = $ReuseSourceFolderStructure."
-                            try {
-                                $msg = $null
-                                $restoreResultTmp = $backupTmpResult | Restore-DbaDatabase -SqlInstance $destServer -DatabaseName $DestinationdbName -ReuseSourceFolderStructure:$ReuseSourceFolderStructure -NoRecovery:$NoRecovery -TrustDbBackupHistory -WithReplace:$WithReplace -Continue:$Continue -EnableException -ReplaceDbNameInFile
-                            } catch {
-                                $msg = $_.Exception.InnerException.InnerException.InnerException.InnerException.Message
-                                Stop-Function -Message "Failure attempting to restore $dbName to $destinstance" -Exception $_.Exception.InnerException.InnerException.InnerException.InnerException
-                            }
+                            if ($databaseInOwnSubdir) {
+                                $dataDirectory = Get-SqlDefaultPaths $destServer data
+                                $logDirectory = Get-SqlDefaultPaths $destServer log
+                                $databaseDataDir = Join-Path $dataDirectory $DestinationdbName
+                                $databaseLogDir = Join-Path $logDirectory $DestinationdbName
+                                Write-Message -Level Verbose -Message "databaseInOwnSubdir specified, destination paths are $databaseDataDir, $databaseLogDir"
+                            
+                                try {
+                                    $msg = $null
+                                    $restoreResultTmp = $backupTmpResult | Restore-DbaDatabase -SqlInstance $destServer -DatabaseName $DestinationdbName -DestinationDataDirectory $databaseDataDir -DestinationLogDirectory $databaseLogDir -NoRecovery:$NoRecovery -TrustDbBackupHistory -WithReplace:$WithReplace -Continue:$Continue -EnableException -ReplaceDbNameInFile
+                                    } catch {
+                                        $msg = $_.Exception.InnerException.InnerException.InnerException.InnerException.Message
+                                        Stop-Function -Message "Failure attempting to restore $dbName to $destinstance" -Exception $_.Exception.InnerException.InnerException.InnerException.InnerException
+                                    }
+                            } else {
+                                Write-Message -Level Verbose -Message "Reuse = $ReuseSourceFolderStructure."
+                                try {
+                                    $msg = $null
+                                    $restoreResultTmp = $backupTmpResult | Restore-DbaDatabase -SqlInstance $destServer -DatabaseName $DestinationdbName -ReuseSourceFolderStructure:$ReuseSourceFolderStructure -NoRecovery:$NoRecovery -TrustDbBackupHistory -WithReplace:$WithReplace -Continue:$Continue -EnableException -ReplaceDbNameInFile
+                                    } catch {
+                                        $msg = $_.Exception.InnerException.InnerException.InnerException.InnerException.Message
+                                        Stop-Function -Message "Failure attempting to restore $dbName to $destinstance" -Exception $_.Exception.InnerException.InnerException.InnerException.InnerException
+                                    }
+                                }
                             $restoreResult = $restoreResultTmp.RestoreComplete
 
                             if ($restoreResult -eq $true) {
